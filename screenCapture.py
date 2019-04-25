@@ -2,9 +2,10 @@
 import time
 import struct
 import threading
+import Quartz.CoreGraphics as CG
+from pngcanvas import PNGCanvas
 from pymouse import PyMouse, PyMouseEvent
 from pynput.keyboard import Key, Listener
-import Quartz.CoreGraphics as CG
 
 class MouseHooks(PyMouseEvent):
     """ listenting to mouse hooks to capture drawings 
@@ -25,14 +26,15 @@ class MouseHooks(PyMouseEvent):
         elif button == 2:
             print ("writing everything to picture")
             self.screenPixel.draw()
+            exit()
 
     def callCapture(self):
-        print("startin")
+        print("starting")
         while (self.isRunning):
             mouseX = self.mouse.position()[0]
             mouseY = self.mouse.position()[1]
             self.screenPixel.capture(mouseX, mouseY)
-            time.sleep(1)
+            time.sleep(1/30)
 
     def onMouseRelease(self):
         if self.captureProcess is None: 
@@ -78,7 +80,7 @@ class ScreenPixel(object):
             print ("Capture out of Bounds")
             return
         print("capture")
-        region = CG.CGRectMake(x, y, self.width, self.height)
+        region = CG.CGRectMake(x-(self.width/2), y-(self.height/2), self.width, self.height)
         image = CG.CGWindowListCreateImage(
             region,
             CG.kCGWindowListOptionOnScreenOnly,
@@ -115,17 +117,16 @@ class ScreenPixel(object):
          # To verify screen-cap code is correct, save all pixels to PNG,
         # using http://the.taoofmac.com/space/projects/PNGCanvas
 
-        from pngcanvas import PNGCanvas
-        c = PNGCanvas(self.width, self.height)
-
         totalPictures = 0
         for line in self.dataBuffer:
             for _ in line:
                 totalPictures += 1
+
         for line in self.dataBuffer:
             for pictureItem in line:
-                for x in range(self.width):
-                    for y in range(self.height):
+                c = PNGCanvas(pictureItem[1], pictureItem[2])
+                for x in range(pictureItem[1]):
+                    for y in range(pictureItem[2]):
                         c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
                 with open("test" + str(self.counter) + ".png", "wb") as f:
                     f.write(c.dump())
@@ -146,6 +147,10 @@ if __name__ == '__main__':
     #       with timer("Capture"):
 
     # Example usage
-    sp = ScreenPixel(500, 500)
+    sp = ScreenPixel(200, 200)
+    # time.sleep(1)
+    # sp.capture(400, 400)
+    # sp.writeLineBuffer()
+    # sp.draw()
     MouseHooks(sp)
     
