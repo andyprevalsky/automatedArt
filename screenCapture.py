@@ -5,7 +5,6 @@ import threading
 import Quartz.CoreGraphics as CG
 from pngcanvas import PNGCanvas
 from pymouse import PyMouse, PyMouseEvent
-from pynput.keyboard import Key, Listener
 
 class MouseHooks(PyMouseEvent):
     """ listenting to mouse hooks to capture drawings 
@@ -16,17 +15,22 @@ class MouseHooks(PyMouseEvent):
         self.mouse = PyMouse()
         self.isRunning = False
         PyMouseEvent.__init__(self)
-        self.run()
-
+    
     def click(self, x, y, button, press):
         if button == 1 and press:
-            self.onMouseDown()
+            self.captureProcess = threading.Thread(target=self.callCapture)
+            self.captureProcess.start()
+            self.isRunning = True
+            return
         elif button == 1 and not press:
-            self.onMouseRelease()
-        elif button == 2:
-            print ("writing everything to picture")
-            self.screenPixel.draw()
-            exit()
+            self.isRunning = False
+            if self.captureProcess is None: 
+                return
+            self.captureProcess.join()
+            self.screenPixel.writeLineBuffer()
+        elif button == 2 and press:
+            self.screenPixel.undo()
+        
 
     def callCapture(self):
         print("starting")
@@ -34,20 +38,7 @@ class MouseHooks(PyMouseEvent):
             mouseX = self.mouse.position()[0]
             mouseY = self.mouse.position()[1]
             self.screenPixel.capture(mouseX, mouseY)
-            time.sleep(1/30)
-
-    def onMouseRelease(self):
-        if self.captureProcess is None: 
-            return
-        self.isRunning = False
-        self.captureProcess.join()
-        self.screenPixel.writeLineBuffer()
-
-    def onMouseDown(self):
-        self.captureProcess = threading.Thread(target=self.callCapture)
-        self.captureProcess.start()
-        self.isRunning = True
-        return
+            time.sleep(1/20)
 
 
 class ScreenPixel(object):
@@ -62,8 +53,10 @@ class ScreenPixel(object):
         self.dataBuffer = []
         self.lineBuffer = []
         self.counter = 0
+        self.captureCount = 0
 
     def undo(self):
+        print("UNDO")
         if self.dataBuffer == []: 
             return
         del self.dataBuffer[-1]
@@ -72,6 +65,7 @@ class ScreenPixel(object):
         if self.lineBuffer == []: return
         self.dataBuffer.append(self.lineBuffer)
         self.lineBuffer = []
+        self.captureCount = 0
 
     def capture(self, x, y):
         if (x+(self.width/2) > self.mainMonitor.size.width or 
@@ -79,7 +73,10 @@ class ScreenPixel(object):
                 or x-(self.width/2) < 0 or y-(self.height/2) < 0):
             print ("Capture out of Bounds")
             return
-        print("capture")
+
+        print("Capturing " + str(self.captureCount))
+        self.captureCount += 1
+
         region = CG.CGRectMake(x-(self.width/2), y-(self.height/2), self.width, self.height)
         image = CG.CGWindowListCreateImage(
             region,
@@ -116,41 +113,41 @@ class ScreenPixel(object):
     def draw(self):
          # To verify screen-cap code is correct, save all pixels to PNG,
         # using http://the.taoofmac.com/space/projects/PNGCanvas
-
+        print("drawing")
         totalPictures = 0
         for line in self.dataBuffer:
             for _ in line:
                 totalPictures += 1
 
-        for line in self.dataBuffer:
-            for pictureItem in line:
-                c = PNGCanvas(pictureItem[1], pictureItem[2])
-                for x in range(pictureItem[1]):
-                    for y in range(pictureItem[2]):
-                        c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
-                with open("test" + str(self.counter) + ".png", "wb") as f:
-                    f.write(c.dump())
-                self.counter += 1
-                print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
+            for line in self.dataBuffer:
+                for pictureItem in line:
+                    with open("screenCaptures/p" + str(self.counter) + ".txt" , 'w') as f:
+                        f.write("%s\n" % pictureItem[0])
+                    self.counter += 1
+                    print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
         self.dataBuffer = []
+        return
+
+        # for line in self.dataBuffer:
+        #     for pictureItem in line:
+        #         c = PNGCanvas(pictureItem[1], pictureItem[2])
+        #         for x in range(pictureItem[1]):
+        #             for y in range(pictureItem[2]):
+        #                 c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
+        #         with open("test" + str(self.counter) + ".png", "wb") as f:
+        #             f.write(c.dump())
+        #         self.counter += 1
+        #         print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
+        # self.dataBuffer = []
 
 if __name__ == '__main__':
-    # Timer helper-function
-    # import contextlib
- 
-    # @contextlib.contextmanager
-    # def timer(msg):
-    #     start = time.time()
-    #     yield
-    #     end = time.time()
-    #     print ("%s: %.02fms" % (msg, (end-start)*1000))
-    #       with timer("Capture"):
-
-    # Example usage
     sp = ScreenPixel(200, 200)
-    # time.sleep(1)
-    # sp.capture(400, 400)
-    # sp.writeLineBuffer()
-    # sp.draw()
-    MouseHooks(sp)
+    m = MouseHooks(sp)
+    def drawImages():
+        input("enter a character to draw")
+        sp.draw()
+    t = threading.Thread(target=drawImages)
+    t.start()
+    m.start()
     
+        
