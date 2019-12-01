@@ -4,41 +4,79 @@ import struct
 import threading
 import Quartz.CoreGraphics as CG
 from pngcanvas import PNGCanvas
-from pymouse import PyMouse, PyMouseEvent
+from pynput.mouse import Listener, Button
 
-class MouseHooks(PyMouseEvent):
+
+def pixel(self, x, y, picture, width):
+    """Get pixel value at given (x,y) screen coordinates
+
+    Must call capture first.
+    """
+
+    # Pixel data is unsigned char (8bit unsigned integer),
+    # and there are for (blue,green,red,alpha)
+    data_format = "BBBB"
+
+    # Calculate offset, based on
+    # http://www.markj.net/iphone-uiimage-pixel-color/
+    offset = 4 * ((width*int(round(y))) + int(round(x)))
+
+    # Unpack data from string into Python'y integers
+    b, g, r, a = struct.unpack_from(data_format, picture, offset=offset)
+
+    # Return BGRA as RGBA
+    return (r, g, b, a)
+with open("screenCaptures/p0.txt", "rt") as infile:
+    counter = 0
+    for line in infile:
+        for pictureItem in line:
+            c = PNGCanvas(pictureItem[1], pictureItem[2])
+            for x in range(pictureItem[1]):
+                for y in range(pictureItem[2]):
+                    c.point(x, y, color = pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
+            with open("test" + str(counter) + ".png", "wb") as f:
+                f.write(c.dump())
+            counter += 1
+exit(1)
+
+class MouseHooks():
     """ listenting to mouse hooks to capture drawings 
     on mouse click """
     def __init__(self, screenPixel):
         self.screenPixel = screenPixel
-        self.captureProcess = None
-        self.mouse = PyMouse()
-        self.isRunning = False
-        PyMouseEvent.__init__(self)
+        self.mousePressed = False
     
-    def click(self, x, y, button, press):
-        if button == 1 and press:
-            self.captureProcess = threading.Thread(target=self.callCapture)
-            self.captureProcess.start()
-            self.isRunning = True
-            return
-        elif button == 1 and not press:
-            self.isRunning = False
-            if self.captureProcess is None: 
-                return
-            self.captureProcess.join()
-            self.screenPixel.writeLineBuffer()
-        elif button == 2 and press:
-            self.screenPixel.undo()
+    # def click(self, x, y, button, press):
+    #     if button == 1 and press:
+    #         self.captureProcess = threading.Thread(target=self.callCapture)
+    #         self.isRunning = True
+    #         self.captureProcess.start()
+    #         return
+    #     elif button == 1 and not press:
+    #         self.isRunning = False
+    #         if self.captureProcess is None: 
+    #             return
+    #         self.captureProcess.join()
+    #         self.screenPixel.writeLineBuffer()
+    #     elif button == 2 and press:
+    #         self.screenPixel.undo()
         
 
-    def callCapture(self):
-        print("starting")
-        while (self.isRunning):
-            mouseX = self.mouse.position()[0]
-            mouseY = self.mouse.position()[1]
-            self.screenPixel.capture(mouseX, mouseY)
-            time.sleep(1/20)
+    def callCapture(self, x, y):
+        threading.Thread(target=self.screenPixel.capture(x, y)).start()
+
+    def on_move(self, x, y):
+        if (self.mousePressed):
+            self.callCapture(x,y)
+
+    def on_click(self, x, y, button, pressed):
+        self.mousePressed = pressed
+        if button == Button.left and pressed:
+            self.callCapture(x,y)
+        elif button == Button.left and not pressed:
+            self.screenPixel.writeLineBuffer()
+        elif button == Button.right and pressed:
+            self.screenPixel.undo()
 
 
 class ScreenPixel(object):
@@ -74,8 +112,8 @@ class ScreenPixel(object):
             print ("Capture out of Bounds")
             return
 
-        print("Capturing " + str(self.captureCount))
         self.captureCount += 1
+        print("Capturing " + str(self.captureCount))
 
         region = CG.CGRectMake(x-(self.width/2), y-(self.height/2), self.width, self.height)
         image = CG.CGWindowListCreateImage(
@@ -89,6 +127,37 @@ class ScreenPixel(object):
 
         # Copy data out of CGDataProvider, becomes string of bytes
         self.lineBuffer.append([CG.CGDataProviderCopyData(prov), CG.CGImageGetWidth(image), CG.CGImageGetHeight(image)])
+
+    
+    def draw(self):
+         # To verify screen-cap code is correct, save all pixels to PNG,
+        # using http://the.taoofmac.com/space/projects/PNGCanvas
+        print("drawing")
+        totalPictures = 0
+        for line in self.dataBuffer:
+            for _ in line:
+                totalPictures += 1
+
+        for line in self.dataBuffer:
+            for pictureItem in line:
+                with open("screenCaptures/p" + str(self.counter) + ".txt" , 'w') as f:
+                    f.write("%s\n" % pictureItem[0])
+                self.counter += 1
+                print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
+        self.dataBuffer = []
+        return
+
+        for line in self.dataBuffer:
+            for pictureItem in line:
+                c = PNGCanvas(pictureItem[1], pictureItem[2])
+                for x in range(pictureItem[1]):
+                    for y in range(pictureItem[2]):
+                        c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
+                with open("test" + str(self.counter) + ".png", "wb") as f:
+                    f.write(c.dump())
+                self.counter += 1
+                print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
+        self.dataBuffer = []
 
     def pixel(self, x, y, picture, width):
         """Get pixel value at given (x,y) screen coordinates
@@ -109,45 +178,16 @@ class ScreenPixel(object):
 
         # Return BGRA as RGBA
         return (r, g, b, a)
-    
-    def draw(self):
-         # To verify screen-cap code is correct, save all pixels to PNG,
-        # using http://the.taoofmac.com/space/projects/PNGCanvas
-        print("drawing")
-        totalPictures = 0
-        for line in self.dataBuffer:
-            for _ in line:
-                totalPictures += 1
-
-            for line in self.dataBuffer:
-                for pictureItem in line:
-                    with open("screenCaptures/p" + str(self.counter) + ".txt" , 'w') as f:
-                        f.write("%s\n" % pictureItem[0])
-                    self.counter += 1
-                    print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
-        self.dataBuffer = []
-        return
-
-        # for line in self.dataBuffer:
-        #     for pictureItem in line:
-        #         c = PNGCanvas(pictureItem[1], pictureItem[2])
-        #         for x in range(pictureItem[1]):
-        #             for y in range(pictureItem[2]):
-        #                 c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
-        #         with open("test" + str(self.counter) + ".png", "wb") as f:
-        #             f.write(c.dump())
-        #         self.counter += 1
-        #         print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
-        # self.dataBuffer = []
 
 if __name__ == '__main__':
     sp = ScreenPixel(200, 200)
     m = MouseHooks(sp)
-    def drawImages():
-        input("enter a character to draw")
-        sp.draw()
-    t = threading.Thread(target=drawImages)
-    t.start()
-    m.start()
-    
+    with Listener(on_move=m.on_move, on_click=m.on_click) as listener:
+        def drawImages():
+            input()
+            sp.draw()
+            exit(1)
+        t = threading.Thread(target=drawImages)
+        t.start()
+        listener.join()
         

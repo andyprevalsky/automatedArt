@@ -1,0 +1,1 @@
+for macOSX add vscode or terminal to accessibility
