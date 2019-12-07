@@ -5,6 +5,7 @@ import threading
 import Quartz.CoreGraphics as CG
 from pngcanvas import PNGCanvas
 from pynput.mouse import Listener, Button
+from pynput import keyboard
 
 
 def pixel(self, x, y, picture, width):
@@ -26,18 +27,21 @@ def pixel(self, x, y, picture, width):
 
     # Return BGRA as RGBA
     return (r, g, b, a)
-with open("screenCaptures/p0.txt", "rt") as infile:
-    counter = 0
-    for line in infile:
-        for pictureItem in line:
-            c = PNGCanvas(pictureItem[1], pictureItem[2])
-            for x in range(pictureItem[1]):
-                for y in range(pictureItem[2]):
-                    c.point(x, y, color = pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
-            with open("test" + str(counter) + ".png", "wb") as f:
-                f.write(c.dump())
-            counter += 1
-exit(1)
+
+class keyboardHooks():
+    """ listenting to keyboard hooks for undoes """
+    def __init__(self, screenPixel):
+        self.screenPixel = screenPixel
+        self.commandPressed = False
+    
+    def on_press(self, key):
+        if (key == keyboard.Key.cmd):
+            self.commandPressed = True
+        if (key == keyboard.KeyCode.from_char('z') and self.commandPressed):
+            self.screenPixel.undo()
+    def on_release(self, key):
+        if (key == keyboard.Key.cmd):
+            self.commandPressed = False
 
 class MouseHooks():
     """ listenting to mouse hooks to capture drawings 
@@ -140,20 +144,14 @@ class ScreenPixel(object):
 
         for line in self.dataBuffer:
             for pictureItem in line:
-                with open("screenCaptures/p" + str(self.counter) + ".txt" , 'w') as f:
-                    f.write("%s\n" % pictureItem[0])
-                self.counter += 1
-                print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
-        self.dataBuffer = []
-        return
-
-        for line in self.dataBuffer:
-            for pictureItem in line:
+                if (self.counter % 10 != 0): 
+                    self.counter += 1
+                    continue
                 c = PNGCanvas(pictureItem[1], pictureItem[2])
                 for x in range(pictureItem[1]):
                     for y in range(pictureItem[2]):
                         c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
-                with open("test" + str(self.counter) + ".png", "wb") as f:
+                with open("screenCaptures/image" + str(self.counter) + ".png", "wb") as f:
                     f.write(c.dump())
                 self.counter += 1
                 print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
@@ -182,12 +180,15 @@ class ScreenPixel(object):
 if __name__ == '__main__':
     sp = ScreenPixel(200, 200)
     m = MouseHooks(sp)
+    k = keyboardHooks(sp)
     with Listener(on_move=m.on_move, on_click=m.on_click) as listener:
-        def drawImages():
-            input()
-            sp.draw()
-            exit(1)
-        t = threading.Thread(target=drawImages)
-        t.start()
-        listener.join()
+        with keyboard.Listener(on_press=k.on_press, on_release=k.on_release) as listener2:
+            def drawImages():
+                input()
+                sp.draw()
+                exit(1)
+            t = threading.Thread(target=drawImages)
+            t.start()
+            listener.join()
+            listener2.join()
         
