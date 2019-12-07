@@ -144,8 +144,8 @@ class ScreenPixel(object):
             CG.kCGWindowImageDefault)
 
         # Intermediate step, get pixel data as CGDataProvider
-        prov = CG.CGImageGetDataProvider(image)
         currMousePos = m.currentMousePos
+        prov = CG.CGImageGetDataProvider(image)
         # Copy data out of CGDataProvider, becomes string of bytes
         self.lineBuffer.append([
             CG.CGDataProviderCopyData(prov), 
@@ -186,8 +186,8 @@ class ScreenPixel(object):
                         c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
                 with open("screenCaptures/image" + str(self.counter) + ".png", "wb") as f:
                     f.write(c.dump())
-                if (self.counter % 10 == 0):
-                    with open("labels/" + str(self.counter) + ".txt", "wt") as f:
+                if ((self.counter -1) % 10 == 0): #prev and curr mouse pos of image is curr and future mouse pos of prev img
+                    with open("labels/" + str(self.counter-1) + ".txt", "wt") as f:
                         f.write(self.getDirection(pictureItem[3], pictureItem[4]))
                 self.counter += 1
                 print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
