@@ -2,6 +2,7 @@
 import time
 import struct
 import threading
+import math
 import Quartz.CoreGraphics as CG
 from pngcanvas import PNGCanvas
 from pynput.mouse import Listener, Button
@@ -31,15 +32,23 @@ def pixel(self, x, y, picture, width):
 class keyboardHooks():
     """ listenting to keyboard hooks for undoes """
     def __init__(self, screenPixel):
+        self.running = True
         self.screenPixel = screenPixel
         self.commandPressed = False
     
     def on_press(self, key):
+        if (self.running == False): return False
         if (key == keyboard.Key.cmd):
             self.commandPressed = True
-        if (key == keyboard.KeyCode.from_char('z') and self.commandPressed):
+        if (key == keyboard.KeyCode.from_char('z') and self.commandPressed): # undo buffer on cmd z
             self.screenPixel.undo()
+        if (key == keyboard.KeyCode.from_char('s') and self.commandPressed): # save drawing on cmd s
+            self.running = False
+            m.running = False
+            self.screenPixel.draw()
+
     def on_release(self, key):
+        if (self.running == False): return False
         if (key == keyboard.Key.cmd):
             self.commandPressed = False
 
@@ -47,8 +56,10 @@ class MouseHooks():
     """ listenting to mouse hooks to capture drawings 
     on mouse click """
     def __init__(self, screenPixel):
+        self.running = True
         self.screenPixel = screenPixel
         self.mousePressed = False
+        self.currentMousePos = None
     
     # def click(self, x, y, button, press):
     #     if button == 1 and press:
@@ -64,16 +75,21 @@ class MouseHooks():
     #         self.screenPixel.writeLineBuffer()
     #     elif button == 2 and press:
     #         self.screenPixel.undo()
-        
+
 
     def callCapture(self, x, y):
         threading.Thread(target=self.screenPixel.capture(x, y)).start()
 
     def on_move(self, x, y):
+        if (self.running == False): return False
+        self.currentMousePos = [x, y]
         if (self.mousePressed):
             self.callCapture(x,y)
 
     def on_click(self, x, y, button, pressed):
+        if (self.running == False): return False
+        self.currentMousePos = [x, y]
+        self.screenPixel.previousMousePos = None
         self.mousePressed = pressed
         if button == Button.left and pressed:
             self.callCapture(x,y)
@@ -96,6 +112,7 @@ class ScreenPixel(object):
         self.lineBuffer = []
         self.counter = 0
         self.captureCount = 0
+        self.previousMousePos = None
 
     def undo(self):
         print("UNDO")
@@ -128,11 +145,25 @@ class ScreenPixel(object):
 
         # Intermediate step, get pixel data as CGDataProvider
         prov = CG.CGImageGetDataProvider(image)
-
+        currMousePos = m.currentMousePos
         # Copy data out of CGDataProvider, becomes string of bytes
-        self.lineBuffer.append([CG.CGDataProviderCopyData(prov), CG.CGImageGetWidth(image), CG.CGImageGetHeight(image)])
+        self.lineBuffer.append([
+            CG.CGDataProviderCopyData(prov), 
+            CG.CGImageGetWidth(image), 
+            CG.CGImageGetHeight(image),
+            self.previousMousePos,
+            currMousePos
+        ])
+        self.previousMousePos = currMousePos
 
     
+    def getDirection(self, start, end):
+        """ takes in start and end coordinates as 1-d 2 value arrays
+        and return the angle between the two """
+        #flip first val to atan2 because y val is reversed on screen mapping
+        angle = (math.degrees(math.atan2(start[1] - end[1], end[0] - start[0])) + 360) % 360 
+        return str(angle)
+
     def draw(self):
          # To verify screen-cap code is correct, save all pixels to PNG,
         # using http://the.taoofmac.com/space/projects/PNGCanvas
@@ -144,8 +175,10 @@ class ScreenPixel(object):
 
         for line in self.dataBuffer:
             for pictureItem in line:
-                if (self.counter % 10 != 0): 
+                if (self.counter % 10 != 0 and (self.counter - 1) % 10 != 0): 
                     self.counter += 1
+                    continue
+                if (pictureItem[3] == None): #pass over starts of lines
                     continue
                 c = PNGCanvas(pictureItem[1], pictureItem[2])
                 for x in range(pictureItem[1]):
@@ -153,6 +186,9 @@ class ScreenPixel(object):
                         c.point(x, y, color = self.pixel(x, y, picture = pictureItem[0], width = pictureItem[1]))
                 with open("screenCaptures/image" + str(self.counter) + ".png", "wb") as f:
                     f.write(c.dump())
+                if (self.counter % 10 == 0):
+                    with open("labels/" + str(self.counter) + ".txt", "wt") as f:
+                        f.write(self.getDirection(pictureItem[3], pictureItem[4]))
                 self.counter += 1
                 print ("Done Writing " + str(self.counter) + " / " + str(totalPictures))
         self.dataBuffer = []
@@ -183,12 +219,6 @@ if __name__ == '__main__':
     k = keyboardHooks(sp)
     with Listener(on_move=m.on_move, on_click=m.on_click) as listener:
         with keyboard.Listener(on_press=k.on_press, on_release=k.on_release) as listener2:
-            def drawImages():
-                input()
-                sp.draw()
-                exit(1)
-            t = threading.Thread(target=drawImages)
-            t.start()
             listener.join()
             listener2.join()
         
